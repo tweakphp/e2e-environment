@@ -6,10 +6,6 @@ Dedicated, script-managed E2E testing environment for verifying **TweakPHP** con
 - 🔑 **SSH Connections**: Testing remote execution over SSH (`tweakphp-ssh-app` on port `2222`).
 - ☸️ **Kubernetes (kubectl) Connections**: Testing connection execution inside pods running in a local cluster (`tweakphp-test` namespace).
 
-
-> - This entire `e2e-environment/` directory is **excluded** from production Electron app builds (configured via `!e2e-environment/**` in `package.json` under `build.files`).
-> - Generated test applications inside `e2e-environment/apps/` are ignored in `.gitignore`.
-
 ---
 
 ## 🏗️ Architecture & How It Works
@@ -51,26 +47,3 @@ make down
 # Clean teardown (stops services and wipes apps/)
 make clean
 ```
-
----
-
-### 2. Manual Execution via Scripts
-
-```bash
-# Start the environment
-./start.sh
-
-# Stop the environment (preserves apps)
-CLEAN_APPS=false ./stop.sh
-
-# Full cleanup (stops containers and deletes apps/)
-./stop.sh --clean
-```
-
----
-
-### 3. Copy TweakPHP Connection Parameters
-
-After running `make up` (or `make info`), copy the displayed connection parameters into TweakPHP.
-
-*(Note: `stop.sh` uses a lightweight Docker container to reset permissions on `apps/` before deletion, preventing any root-owned file permission errors).*
