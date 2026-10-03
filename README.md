@@ -31,27 +31,46 @@ Dedicated, script-managed E2E testing environment for verifying **TweakPHP** con
 
 ## 🚀 Quick Start Guide
 
-### 1. Start the Environment
-To build containers, provision Laravel projects inside, and launch all services:
+### 1. Using the Makefile (Recommended)
+
+A helper Makefile is included to streamline all lifecycle operations:
 
 ```bash
-chmod +x e2e-environment/scripts/*.sh
-./e2e-environment/scripts/start.sh
+# View all available targets and help
+make
+
+# Start the environment (builds if necessary, starts services, displays credentials)
+make up
+
+# Display connection parameters anytime
+make info
+
+# Stop services safely (preserves apps/ for instant next start)
+make down
+
+# Clean teardown (stops services and wipes apps/)
+make clean
 ```
 
 ---
 
-### 2. Copy TweakPHP Connection Parameters
+### 2. Manual Execution via Scripts
 
-After running `./e2e-environment/scripts/start.sh`, copy these exact values into TweakPHP as displayed in the terminal after the script finishes running.
+```bash
+# Start the environment
+./start.sh
+
+# Stop the environment (preserves apps)
+CLEAN_APPS=false ./stop.sh
+
+# Full cleanup (stops containers and deletes apps/)
+./stop.sh --clean
+```
 
 ---
 
-### 3. Stop & Clean Up
-To stop all containers, delete Kubernetes manifests, and wipe generated project files:
+### 3. Copy TweakPHP Connection Parameters
 
-```bash
-./e2e-environment/scripts/stop.sh
-```
+After running `make up` (or `make info`), copy the displayed connection parameters into TweakPHP.
 
 *(Note: `stop.sh` uses a lightweight Docker container to reset permissions on `apps/` before deletion, preventing any root-owned file permission errors).*

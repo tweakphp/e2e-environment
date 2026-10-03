@@ -2,7 +2,13 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [ -f "$SCRIPT_DIR/docker-compose.yml" ]; then
+    BASE_DIR="$SCRIPT_DIR"
+elif [ -f "$SCRIPT_DIR/../docker-compose.yml" ]; then
+    BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+    BASE_DIR="$SCRIPT_DIR"
+fi
 
 echo "============================================================"
 echo " 🔍 PRE-FLIGHT PREREQUISITES CHECK (PHP 8.3 Environment)"
@@ -32,25 +38,42 @@ fi
 echo "============================================================"
 echo ""
 
+if [ "$HAS_DOCKER" != true ] && [ "$HAS_K8S" != true ]; then
+    echo "❌ Neither Docker nor Kubernetes is available or running."
+    echo "   Please start Docker (Docker Desktop, OrbStack, etc.) or your K8s cluster and try again."
+    exit 1
+fi
+
 # Run setup to spin up containers and install Laravel inside containers
-if [ ! -d "$BASE_DIR/apps/docker-app" ] || [ ! -d "$BASE_DIR/apps/sail-app" ] || [ ! -d "$BASE_DIR/apps/ssh-app" ] || [ ! -f "$BASE_DIR/apps/docker-app/artisan" ]; then
-    echo "--> Running setup.sh to start containers and install Laravel inside..."
-    bash "$SCRIPT_DIR/setup.sh"
-else
-    if [ "$HAS_DOCKER" = true ] && [ "$HAS_DOCKER_COMPOSE" = true ]; then
+if [ "$HAS_DOCKER" = true ] && [ "$HAS_DOCKER_COMPOSE" = true ]; then
+    if [ ! -f "$BASE_DIR/apps/docker-app/artisan" ] || [ ! -f "$BASE_DIR/apps/sail-app/artisan" ] || [ ! -f "$BASE_DIR/apps/ssh-app/artisan" ]; then
+        echo "--> Running setup.sh to start containers and install Laravel inside..."
+        bash "$BASE_DIR/setup.sh"
+    else
         echo "--> Starting Docker Compose services..."
         cd "$BASE_DIR"
-        docker compose up -d
+        if docker compose version >/dev/null 2>&1; then
+            docker compose up -d
+        else
+            docker-compose up -d
+        fi
     fi
+else
+    echo "  [!] Docker is not available or not running. Skipping Docker services."
 fi
 
 if [ "$HAS_K8S" = true ]; then
     echo "--> Applying Kubernetes test manifests..."
     if kubectl get ns tweakphp-test 2>/dev/null | grep -q Terminating; then
-        kubectl wait --for=delete namespace/tweakphp-test --timeout=30s || true
+        echo "--> Waiting for terminating tweakphp-test namespace to clear..."
+        kubectl wait --for=delete namespace/tweakphp-test --timeout=30s 2>/dev/null || true
     fi
-    kubectl apply -f "$BASE_DIR/k8s/laravel-pod.yaml"
-    kubectl rollout status deployment/tweakphp-k8s-laravel -n tweakphp-test --timeout=300s
+    if kubectl apply -f "$BASE_DIR/k8s/laravel-pod.yaml"; then
+        echo "--> Waiting for Kubernetes deployment rollout..."
+        kubectl rollout status deployment/tweakphp-k8s-laravel -n tweakphp-test --timeout=180s 2>/dev/null || {
+            echo "  [!] Warning: Kubernetes deployment rollout did not complete within timeout."
+        }
+    fi
 fi
 
 echo ""
@@ -60,9 +83,12 @@ echo " Copy and paste these exact values into TweakPHP connections:"
 echo "============================================================"
 
 if [ "$HAS_DOCKER" = true ]; then
-    DOCKER_ID=$(docker inspect -f '{{.Id}}' tweakphp-docker-app 2>/dev/null | cut -c1-12 || echo "tweakphp-docker-app")
-    SAIL_ID=$(docker inspect -f '{{.Id}}' tweakphp-sail-app 2>/dev/null | cut -c1-12 || echo "tweakphp-sail-app")
-    SSH_ID=$(docker inspect -f '{{.Id}}' tweakphp-ssh-app 2>/dev/null | cut -c1-12 || echo "tweakphp-ssh-app")
+    DOCKER_ID=$(docker inspect -f '{{.Id}}' tweakphp-docker-app 2>/dev/null | cut -c1-12)
+    SAIL_ID=$(docker inspect -f '{{.Id}}' tweakphp-sail-app 2>/dev/null | cut -c1-12)
+    SSH_ID=$(docker inspect -f '{{.Id}}' tweakphp-ssh-app 2>/dev/null | cut -c1-12)
+    DOCKER_ID=${DOCKER_ID:-tweakphp-docker-app}
+    SAIL_ID=${SAIL_ID:-tweakphp-sail-app}
+    SSH_ID=${SSH_ID:-tweakphp-ssh-app}
 
     echo ""
     echo "🐳 [1] DOCKER CONNECTION"
@@ -99,7 +125,9 @@ if [ "$HAS_DOCKER" = true ]; then
 fi
 
 if [ "$HAS_K8S" = true ]; then
-    K8S_POD=$(kubectl get pods -n tweakphp-test -l app=tweakphp-k8s-laravel -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "tweakphp-k8s-laravel-xxxx")
+    K8S_POD=$(kubectl get pods -n tweakphp-test -l app=tweakphp-k8s-laravel --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    [ -z "$K8S_POD" ] && K8S_POD=$(kubectl get pods -n tweakphp-test -l app=tweakphp-k8s-laravel -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    K8S_POD=${K8S_POD:-tweakphp-k8s-laravel-xxxx}
     K8S_CONTEXT=$(kubectl config current-context 2>/dev/null || echo "default")
 
     echo ""
